@@ -236,6 +236,7 @@ class RobotConfigurator:
             else:
                 print("Robot is already calibrated")
             
+            print(self.robot.get_joints())
             self.robot.move(self.home_position)
             self.robot.move(self.capture_image_position)
             print("Robot initialized successfully")

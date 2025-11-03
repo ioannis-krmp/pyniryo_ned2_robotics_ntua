@@ -69,7 +69,7 @@ def live_camera_view():
             display_img = np.hstack((img_processed, mask_bgr))
             cv2.putText(display_img, "Live View + Color Mask (trackbars)", 
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv2.putText(display_img, "Press 'q' or ESC to exit, 's' to screenshot", 
+            cv2.putText(display_img, "Press 'q' or ESC to exit, 's' to screenshot, 'h' to save the current settings", 
                         (10, display_img.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
             
             cv2.imshow(window_name, display_img)

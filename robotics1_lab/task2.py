@@ -67,7 +67,10 @@ class PositionValidator:
 class NiryoNed2Robot:
     def __init__(self):
         self.home_position = JointsPosition(0.0, 0.3, -1.3, 0.0, 0.0, 0.0)
-        self.capture_image_position = JointsPosition(-0.025, 0.093, -0.146, 0.033, -1.853, -0.038)
+        #self.capture_image_position = JointsPosition(-0.025, 0.093, -0.146, 0.033, -1.853, -0.038)
+        self.capture_image_position = JointsPosition(-0.012, 0.297, -0.706, 0.033, -1.277, -0.3)
+        self.position_before_grasping = self.capture_image_position
+        self.position_before_releasing = JointsPosition(-1.6, -0.185, -0.5, 0.1, -0.91, -0.11)       
         self.robot_ip = "192.168.1.120"
         self.robot = None
         
@@ -349,19 +352,27 @@ class NiryoNed2Robot:
             pos_list = intermediate_pos.to_list()
             clean_pos = JointsPosition(pos_list[0], pos_list[1], pos_list[2], pos_list[3], pos_list[4], pos_list[5])
             self.robot.move(clean_pos)
-            
+
+            time.sleep(1)
+            self.robot.move(self.capture_image_position)
+            time.sleep(1)
+            self.robot.move(self.position_before_releasing)
+            time.sleep(1)
+
             # Move to release position
             pos_list = release_pos.to_list()
             clean_pos = JointsPosition(pos_list[0], pos_list[1], pos_list[2], pos_list[3], pos_list[4], pos_list[5])
             self.robot.move(clean_pos)
-            
+            time.sleep(1)
             # Open gripper
             self.robot.release_with_tool()
             time.sleep(1)
             
+            self.robot.move(self.position_before_releasing)
+            time.sleep(1)
             # Return to camera position
             self.robot.move(self.capture_image_position)
-            
+            time.sleep(1)
             print("Pick and place sequence completed successfully!")
             return True
             
@@ -373,14 +384,14 @@ class NiryoNed2Robot:
         print("Starting automated pick and place...")
         
         circles_moved = 0
-        max_attempts = 2
+        max_attempts = 10
         processed_circle_ids = set()
         
         for attempt in range(max_attempts):
             print(f"\n--- Attempt {attempt + 1} ---")
             
             circles = self.detect_and_assign_circles()
-            4
+            
             if not circles:
                 print("No more circles detected - task complete!")
                 break

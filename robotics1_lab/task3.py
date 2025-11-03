@@ -67,7 +67,10 @@ class PositionValidator:
 class NiryoNed2Robot:
     def __init__(self):
         self.home_position = JointsPosition(0.0, 0.3, -1.3, 0.0, 0.0, 0.0)
-        self.capture_image_position = JointsPosition(-0.025, 0.093, -0.146, 0.033, -1.853, -0.038)
+        # self.capture_image_position = JointsPosition(-0.025, 0.093, -0.146, 0.033, -1.853, -0.038)
+        self.capture_image_position = JointsPosition(-0.012, 0.297, -0.706, 0.033, -1.277, -0.3)
+        self.position_before_grasping = self.capture_image_position
+        self.position_before_releasing = JointsPosition(-1.6, -0.185, -0.5, 0.1, -0.91, -0.11)  
         self.robot_ip = "192.168.1.120"
         self.robot = None
         
@@ -88,9 +91,9 @@ class NiryoNed2Robot:
         self.nominal_grasp_positions = None # will be loaded from file or calibrated
         
         self.color_to_release = {
-            "red": 3,
+            "red": 1,
             "green": 2,
-            "blue": 1
+            "blue": 3
         }
 
         self.color_mask_config_file = "color_mask_config.json"
@@ -223,12 +226,15 @@ class NiryoNed2Robot:
                 'circularity': circularity
             })
 
-        # --- Assign color to each detected circle ---
         hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         for circle in circles:
             x, y = circle['center']
             patch = hsv_img[max(y-2,0):y+3, max(x-2,0):x+3]
             mean_hsv = np.mean(patch.reshape(-1, 3), axis=0)
+            
+            # DEBUG: Print HSV values
+            print(f"Circle at {circle['center']}: HSV = {mean_hsv}")
+            
             assigned_color = 'unknown'
             for color_name, ranges in self.color_ranges.items():
                 for lower, upper in ranges:
@@ -236,12 +242,53 @@ class NiryoNed2Robot:
                     upper = np.array(upper)
                     if np.all(mean_hsv >= lower) and np.all(mean_hsv <= upper):
                         assigned_color = color_name
+                        print(f"  Matched {color_name} range: {lower} - {upper}")
                         break
                 if assigned_color != 'unknown':
                     break
+            
+            if assigned_color == 'unknown':
+                print(f"  No color match found for HSV {mean_hsv}")
+                
             circle['color'] = assigned_color
+            print(f"  Final assigned color: {assigned_color}")
 
+        print("Final circles with colors:", circles)
         return circles
+        
+    def detect_color_for_patch(self,patch_hsv):
+        # if patch empty, return unknown
+        if patch_hsv.size == 0:
+            return 'unknown'
+        # flatten
+        pixels = patch_hsv.reshape(-1,3)
+        # compute median (more robust than mean for noisy pixels)
+        med = np.median(pixels, axis=0)
+        # but we'll also use mask counts for robustness
+        best_color = 'unknown'
+        best_count = 0
+        for color_name, ranges in self.color_ranges.items():
+            count = 0
+            for lower, upper in ranges:
+                lower = np.array(lower, dtype=np.uint8)
+                upper = np.array(upper, dtype=np.uint8)
+                m = cv2.inRange(patch_hsv, lower, upper)
+                count += int(np.count_nonzero(m))
+            if count > best_count:
+                best_count = count
+                best_color = color_name
+        # require at least some minimal fraction of pixels to agree
+        if best_count >= max(1, int(0.2 * pixels.shape[0])):  # at least 20% of patch pixels
+            return best_color
+        # fallback to median hue test (useful if masks are small)
+        h, s, v = med
+        for color_name, ranges in self.color_ranges.items():
+            for lower, upper in ranges:
+                low = np.array(lower, dtype=np.float32)
+                high = np.array(upper, dtype=np.float32)
+                if np.all(med >= low) and np.all(med <= high):
+                    return color_name
+        return 'unknown'
 
     def draw_circle_detections(self, img, circles):
         result_img = img.copy()
@@ -290,24 +337,39 @@ class NiryoNed2Robot:
         if not self.nominal_grasp_positions:
             print("Nominal grasp positions not set. Please calibrate first.")
             return {}
+        
+        # REVERSE MAPPING: camera left/right vs robot left/right are flipped
+        position_mapping = [2, 1, 0]  # N1->grasp_3, N2->grasp_2, N3->grasp_1
+        
         assignments = {}
         used_circles = set()
-        for idx, nominal_center in enumerate(self.nominal_grasp_positions):
-            # Find the closest circle not already assigned
-            closest = None
-            min_dist = float('inf')
-            for c in detected_circles:
-                if c['id'] in used_circles:
+        
+        for idx in range(len(self.nominal_grasp_positions)):
+            nominal_center = self.nominal_grasp_positions[idx]
+            grasp_name = f'grasp_{position_mapping[idx] + 1}'  # Use reversed mapping
+            
+            best_circle = None
+            best_distance = float('inf')
+            
+            for circle in detected_circles:
+                if circle['id'] in used_circles:
                     continue
-                dist = np.linalg.norm(np.array(c['center']) - np.array(nominal_center))
-                if dist < min_dist:
-                    min_dist = dist
-                    closest = c
-            # Only assign if the circle is close enough (avoid assigning random far circles)
-            if closest and min_dist < distance_threshold:
-                assignments[f'grasp_{idx+1}'] = closest
-                used_circles.add(closest['id'])
+                    
+                distance = np.linalg.norm(np.array(circle['center']) - np.array(nominal_center))
+                
+                if distance < distance_threshold and distance < best_distance:
+                    best_distance = distance
+                    best_circle = circle
+            
+            if best_circle:
+                assignments[grasp_name] = best_circle
+                used_circles.add(best_circle['id'])
+                color = best_circle.get('color', 'unknown')
+                release_num = self.color_to_release.get(color, 1)
+                print(f"Circle at N{idx+1} position: {color} → {grasp_name} → release_{release_num}")
+        
         return assignments
+
 
     def pick_and_place_sequence(self, grasp_num, release_num):
         try:
@@ -320,14 +382,18 @@ class NiryoNed2Robot:
             print(f"Executing pick and place: grasp_{grasp_num} -> release_{release_num}")
             self.robot.release_with_tool()
             time.sleep(1)
+            self.robot.move(self.capture_image_position)
             self.robot.move(intermediate_pos)
             self.robot.move(grasp_pos)
             self.robot.grasp_with_tool()
             time.sleep(1)
             self.robot.move(intermediate_pos)
+            self.robot.move(self.capture_image_position)
+            self.robot.move(self.position_before_releasing)
             self.robot.move(release_pos)
             self.robot.release_with_tool()
             time.sleep(1)
+            self.robot.move(self.position_before_releasing)
             self.robot.move(self.capture_image_position)
             print("Pick and place sequence completed successfully!")
             return True
@@ -361,6 +427,7 @@ class NiryoNed2Robot:
                 grasp_num = int(grasp_key.split('_')[1])
                 release_num = self.color_to_release.get(color, 1)
                 print(f"Moving {color} circle from {grasp_key} to release_{release_num})")
+                print("Detected circles (raw):")
                 success = self.pick_and_place_sequence(grasp_num, release_num)
                 if success:
                     circles_moved += 1
