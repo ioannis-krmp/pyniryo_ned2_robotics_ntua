@@ -494,7 +494,9 @@ def show_menu():
     print("2. Live Camera View")
     print("3. Detect Circles (Single Shot)")
     print("4. Automated Pick and Place")
-    print("5. Exit")
+    print("5. Close Gripper")
+    print("6. Open Gripper")
+    print("7. Exit")
     print("="*50)
 
 def main():
@@ -513,7 +515,7 @@ def main():
         print("Robot ready for operations!")
         while True:
             show_menu()
-            choice = input("Enter your choice (1-5): ").strip()
+            choice = input("Enter your choice (1-7): ").strip()
             if choice == "1":
                 ned2_robot.calibrate_nominal_grasp_positions()
             elif choice == "2":
@@ -523,10 +525,20 @@ def main():
             elif choice == "4":
                 ned2_robot.automated_pick_and_place()
             elif choice == "5":
+                print("Closing gripper...")
+                ned2_robot.robot.grasp_with_tool()
+                print("Gripper closed.")
+
+            elif choice == "6":
+                print("Opening gripper...")
+                ned2_robot.robot.release_with_tool()
+                print("Gripper opened.")
+
+            elif choice == "7":
                 print("Exiting program...")
                 break
             else:
-                print("Invalid choice! Please enter 1-5")
+                print("Invalid choice! Please enter 1-7")
     except KeyboardInterrupt:
         print("\nProgram interrupted by user")
     except Exception as e:

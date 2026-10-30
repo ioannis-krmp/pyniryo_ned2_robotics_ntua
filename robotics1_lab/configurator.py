@@ -98,12 +98,18 @@ class PositionGUI:
         
         button_row2 = ttk.Frame(button_frame)
         button_row2.pack(pady=5)
-        
+
+        button_row3 = ttk.Frame(button_frame)
+        button_row3.pack(pady=5)
+
         ttk.Button(button_row1, text="Auto Generate Intermediate", command=self.auto_generate_intermediate, width=20).pack(side=tk.LEFT, padx=8)
         ttk.Button(button_row1, text="Test All Positions", command=self.test_positions, width=20).pack(side=tk.LEFT, padx=8)
-        
-        ttk.Button(button_row2, text="Show Current Position", command=self.show_current_position, width=20).pack(side=tk.LEFT, padx=8)
-        ttk.Button(button_row2, text="Save & Exit", command=self.save_and_exit, width=20).pack(side=tk.LEFT, padx=8)
+
+        ttk.Button(button_row2, text="Close Gripper", command=self.close_gripper, width=20).pack(side=tk.LEFT, padx=8)
+        ttk.Button(button_row2, text="Open Gripper", command=self.open_gripper, width=20).pack(side=tk.LEFT, padx=8)
+
+        ttk.Button(button_row3, text="Show Current Position", command=self.show_current_position, width=20).pack(side=tk.LEFT, padx=8)
+        ttk.Button(button_row3, text="Save & Exit", command=self.save_and_exit, width=20).pack(side=tk.LEFT, padx=8)
         
         self.update_status()
         
@@ -122,6 +128,20 @@ class PositionGUI:
                                 command=lambda name=pos_name: self.save_position(name))
             save_btn.grid(row=i, column=2, padx=8, pady=5)
     
+    def close_gripper(self):
+        try:
+            self.position_manager.robot.grasp_with_tool()
+            messagebox.showinfo("Gripper", "Gripper closed.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to close gripper: {e}")
+
+    def open_gripper(self):
+        try:
+            self.position_manager.robot.release_with_tool()
+            messagebox.showinfo("Gripper", "Gripper opened.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open gripper: {e}")
+
     def show_current_position(self):
         try:
             current_joints = self.position_manager.robot.get_joints()
